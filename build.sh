@@ -9,6 +9,7 @@ rpm-ostree install golang
 rpm-ostree install fedora-packager fedora-review rpkg \
     git \
     systemd-rpm-macros \
+    systemd-devel \
     gcc \
     wget \
     meson \

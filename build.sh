@@ -6,7 +6,8 @@ RELEASE="$(rpm -E %fedora)"
 
 rpm-ostree install golang
 
-rpm-ostree install git \
+rpm-ostree install fedora-packager fedora-review rpkg \
+    git \
     systemd-rpm-macros \
     gcc \
     wget \

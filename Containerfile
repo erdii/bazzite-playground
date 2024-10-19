@@ -57,3 +57,7 @@ RUN mkdir -p /var/lib/alternatives && \
 # - /var/lib/alternatives is required to prevent failure with some RPM installs
 # - All RUN commands must end with ostree container commit
 #   see: https://coreos.github.io/rpm-ostree/container/#using-ostree-container-commit
+
+# Trust image repo.
+COPY etc/containers/registries.d/erdii.yaml /etc/containers/registries.d/erdii.yml
+COPY cosign.pub /etc/pki/containers/erdii.pub

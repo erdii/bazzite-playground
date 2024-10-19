@@ -4,9 +4,16 @@ set -ouex pipefail
 
 RELEASE="$(rpm -E %fedora)"
 
-rpm-ostree install golang
+curl -Lo /etc/yum.repos.d/_copr_erdii-bazzite-playground.repo \
+    https://copr.fedorainfracloud.org/coprs/erdii/bazzite-playground/repo/fedora-"${RELEASE}"/erdii-bazzite-playground-fedora-"${RELEASE}".repo
 
-rpm-ostree install fedora-packager fedora-review rpkg \
+rpm-ostree install \
+    unl0kr-2.0.3-1.fc40.x86_64 \
+    unl0kr-dracut-2.0.3-1.fc40.x86_64 \
+    golang \
+    fedora-packager \
+    fedora-review \
+    rpkg \
     git \
     systemd-rpm-macros \
     systemd-devel \
@@ -21,6 +28,4 @@ rpm-ostree install fedora-packager fedora-review rpkg \
     libdrm-devel \
     scdoc
 
-# curl -Lo /etc/yum.repos.d/_copr_erdii-bazzite-playground.repo https://copr.fedorainfracloud.org/coprs/erdii/bazzite-playground/repo/fedora-"${RELEASE}"/erdii-bazzite-playground-fedora-"${RELEASE}".repo
-
-# rpm-ostree install unl0kr
+KERNEL_FLAVOR="main" /tmp/build-initramfs.sh

@@ -5,7 +5,7 @@ set -ouex pipefail
 RELEASE="$(rpm -E %fedora)"
 
 # Enable sigstore validation for ostree images from ghcr.io/erdii.
-jq '.transports.docker["ghcr.io/erdii"] = {"type": "sigstoreSigned","keyPath":"/etc/pki/containers/erdii.pub","signedIdentity":{"type":"matchRepository"}}' /etc/containers/policy.json > /etc/containers/policy.json.2
+jq '.transports.docker["ghcr.io/erdii/bazzite-playground"] = [{"type": "sigstoreSigned","keyPath":"/etc/pki/containers/erdii.pub","signedIdentity":{"type":"matchRepository"}}]' /etc/containers/policy.json > /etc/containers/policy.json.2
 mv /etc/containers/policy.json.2 /etc/containers/policy.json
 
 curl -Lo /etc/yum.repos.d/_copr_erdii-bazzite-playground.repo \

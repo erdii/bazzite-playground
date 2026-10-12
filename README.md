@@ -18,9 +18,10 @@ Bazzite Deck GNOME (`ghcr.io/ublue-os/bazzite-deck-gnome:stable`) plus:
   (pinned commit, `UNL0KR_PKG_REV` in the `Containerfile`), built in the
   `unl0kr-build` stage with two patches from `unl0kr/patches/`:
   - `0001`: stop the agent's path unit from re-triggering on leftover reply sockets.
-  - `0002`: rotate the UI from `/sys/class/graphics/fbcon/rotate`. The Deck panel
-    is mounted sideways; the kernel derives the console rotation from the DRM
-    panel orientation, unl0kr upstream ignores it (buffybox issue #14).
+  - `0002`: rotate the UI to the DRM connector's `panel orientation` (the Deck
+    panel is mounted sideways and reports "Right Side Up"); unl0kr upstream
+    ignores it (buffybox issue #14). `/sys/class/graphics/fbcon/rotate` is only
+    a fallback: it stays 0 on quiet boots because fbcon defers taking over.
 - `system_files/` adds the Deck glue:
   - `/etc/unl0kr.conf.d/50-deck.conf`: fbdev backend (the only one that can
     rotate), on-screen keyboard always shown, haptics off.

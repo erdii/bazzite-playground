@@ -34,6 +34,15 @@ log() {
     echo "encryption: $*" >&2
 }
 
+# systemd-ask-password, waiting like systemd-cryptsetup does, and saying so
+# when it fails (set -e would end the script silently)
+ask() {
+    local rc=0
+    systemd-ask-password --timeout=0 "$@" || rc=$?
+    [ "$rc" -eq 0 ] || log "asking \"${*: -1}\" failed with exit code $rc"
+    return "$rc"
+}
+
 # 0: should be encrypted, 1: should not be, 2: leave as it is
 desired() {
     case "$encryption:$1" in
@@ -92,9 +101,9 @@ unlock() {
     [ -n "$hdr" ] && args=(--header "$hdr")
     while :; do
         if [ "$role" = internal ]; then
-            pw=$(systemd-ask-password --timeout=0 --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
+            pw=$(ask --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
         else
-            pw=$(systemd-ask-password --timeout=0 --keyname=cryptsetup --id="encryption:$name" \
+            pw=$(ask --keyname=cryptsetup --id="encryption:$name" \
                 "Passphrase for the microSD card (empty to skip):")
             [ -n "$pw" ] || return 1
         fi
@@ -111,8 +120,8 @@ new_passphrase() {
     local pw pw2
     first_cached_passphrase && return 0
     while :; do
-        pw=$(systemd-ask-password --timeout=0 --keyname=cryptsetup --id=encryption:new "New disk encryption passphrase:")
-        pw2=$(systemd-ask-password --timeout=0 --id=encryption:new "Repeat the passphrase:")
+        pw=$(ask --keyname=cryptsetup --id=encryption:new "New disk encryption passphrase:")
+        pw2=$(ask --id=encryption:new "Repeat the passphrase:")
         if [ -n "$pw" ] && [ "$pw" = "$pw2" ]; then
             printf %s "$pw"
             return 0
@@ -196,7 +205,7 @@ converge() {
             log "$dev: starting decryption"
             # Not cached if the device was unlocked before this ran
             pw=$(first_cached_passphrase) ||
-                pw=$(systemd-ask-password --timeout=0 --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
+                pw=$(ask --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
             printf %s "$pw" |
                 cryptsetup reencrypt --decrypt --init-only --header "$hdr" --key-file=- "$dev"
             sync

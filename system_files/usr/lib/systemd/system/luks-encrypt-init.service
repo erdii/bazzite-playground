@@ -1,0 +1,18 @@
+[Unit]
+Description=Initialize in-place disk encryption
+DefaultDependencies=no
+ConditionKernelCommandLine=rd.encrypt
+ConditionPathExists=/etc/initrd-release
+# The new passphrase is asked for through unl0kr
+After=systemd-udevd.service plymouth-start.service unl0kr-agent.path
+Before=cryptsetup-pre.target
+Wants=cryptsetup-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/luks-encrypt-init
+TimeoutSec=0
+
+[Install]
+WantedBy=sysinit.target

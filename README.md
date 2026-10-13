@@ -53,6 +53,41 @@ agent, drop-ins, amdgpu/touch modules and XKB data (see "Testing").
 Not verified yet: an actual boot on the Deck (DRM hand-over from plymouth,
 rotation direction, touch alignment, LUKS unlock).
 
+## Encrypting an existing installation in place
+
+`luks-encrypt-init` (initramfs, dracut module `57luks-encrypt`) and
+`luks-encrypt-resume.service` encrypt the btrfs root partition of a running
+installation with LUKS2 without reinstalling. Only the header is written
+while the root is unmounted (seconds, at boot); the data is encrypted
+online afterwards, at idle priority. Rehearsed on the Deck with a microSD
+volume: interrupting, suspending and rebooting mid-way are all safe
+(`cryptsetup reencrypt`'s default checksum resilience), and the data
+checksums and a btrfs scrub were clean afterwards.
+
+1. Back up what you cannot re-download.
+2. Make room for the LUKS2 header (online):
+   `sudo btrfs filesystem resize -32M /sysroot`
+3. Pick the LUKS UUID up front and point the boot at it:
+   ```bash
+   U=$(uuidgen)
+   P=$(sudo blkid -s PARTUUID -o value /dev/nvme0n1p3)
+   sudo rpm-ostree kargs --append=rd.luks.uuid=$U --append=rd.encrypt=$P:$U \
+       --append=rd.luks.options=$U=x-systemd.device-timeout=600
+   ```
+4. Reboot. unl0kr asks for the new passphrase twice; the boot continues
+   and `luks-encrypt-resume.service` encrypts in the background
+   (`journalctl -fu luks-encrypt-resume`). It takes the passphrase that
+   systemd-cryptsetup cached at boot; after an interruption it continues
+   after the next unlock, or run `sudo /usr/libexec/luks-encrypt-resume`.
+5. When `sudo cryptsetup luksDump /dev/disk/by-uuid/$U` no longer lists
+   `online-reencrypt`, drop the migration arguments:
+   `sudo rpm-ostree kargs --delete=rd.encrypt=$P:$U --delete=rd.luks.options=$U=x-systemd.device-timeout=600`
+
+`luks-encrypt-init` refuses (and boots unencrypted) unless the partition
+holds btrfs with at least 32 MiB unused at the end. If it fails anyway,
+the unlock times out after 10 minutes; boot the previous entry and remove
+`rd.encrypt=` / `rd.luks.uuid=` again.
+
 ## Publishing and switching
 
 Built by `.github/workflows/build.yml` and signed with the repo secret

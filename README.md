@@ -16,20 +16,24 @@ Bazzite Deck GNOME (`ghcr.io/ublue-os/bazzite-deck-gnome:stable`) plus:
   Other agents (plymouth, console) keep working; the first answer wins.
 - RPMs come from [buffybox-unl0kr-fedora](https://github.com/jaredbartimus/buffybox-unl0kr-fedora)
   (pinned commit, `UNL0KR_PKG_REV` in the `Containerfile`), built in the
-  `unl0kr-build` stage with two patches from `unl0kr/patches/`:
+  `unl0kr-build` stage with patches from `unl0kr/patches/`:
   - `0001`: stop the agent's path unit from re-triggering on leftover reply sockets.
   - `0002`: rotate the UI to the DRM connector's `panel orientation` (the Deck
     panel is mounted sideways and reports "Right Side Up"); unl0kr upstream
     ignores it (buffybox issue #14). `/sys/class/graphics/fbcon/rotate` is only
     a fallback: it stays 0 on quiet boots because fbcon defers taking over.
+  - `0003` (LVGL, applied after the spec unpacks it): software rotation for
+    LVGL's DRM driver, which otherwise scans its buffers out unrotated.
 - `system_files/` adds the Deck glue:
-  - `/etc/unl0kr.conf.d/50-deck.conf`: fbdev backend (the only one that can
-    rotate), on-screen keyboard always shown, haptics off.
+  - `/etc/unl0kr.conf.d/50-deck.conf`: DRM backend (the Bazzite kernel has no
+    `/dev/fb*`, `CONFIG_FB_DEVICE` is not set), on-screen keyboard always
+    shown, haptics off.
   - `unl0kr-agent.{path,service}.d/plymouth.conf`: upstream refuses to start
-    while plymouth runs; we start anyway and `plymouth quit` so plymouth
-    releases the display.
-  - `/usr/libexec/unl0kr-wait-fb`: waits until amdgpu replaces simpledrm's
-    `/dev/fb0`, otherwise unl0kr draws into a framebuffer that disappears.
+    while plymouth runs; we start anyway and stop plymouth so it drops DRM
+    master. `plymouth quit` alone never returns while plymouth shows a
+    password prompt, so it gets killed after 2s.
+  - `/usr/libexec/unl0kr-wait-drm`: waits until amdgpu replaces simpledrm's
+    DRM card, otherwise unl0kr draws on a device that disappears.
   - dracut: `90-unl0kr.conf` enables `55unl0kr` (from the RPM) and
     `56unl0kr-deck` (ships the files above), plus amdgpu and touch drivers.
 - `build_files/build.sh` installs the RPMs and rebuilds the initramfs with the

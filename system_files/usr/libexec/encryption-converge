@@ -92,9 +92,9 @@ unlock() {
     [ -n "$hdr" ] && args=(--header "$hdr")
     while :; do
         if [ "$role" = internal ]; then
-            pw=$(systemd-ask-password --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
+            pw=$(systemd-ask-password --timeout=0 --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
         else
-            pw=$(systemd-ask-password --keyname=cryptsetup --id="encryption:$name" \
+            pw=$(systemd-ask-password --timeout=0 --keyname=cryptsetup --id="encryption:$name" \
                 "Passphrase for the microSD card (empty to skip):")
             [ -n "$pw" ] || return 1
         fi
@@ -111,8 +111,8 @@ new_passphrase() {
     local pw pw2
     first_cached_passphrase && return 0
     while :; do
-        pw=$(systemd-ask-password --keyname=cryptsetup --id=encryption:new "New disk encryption passphrase:")
-        pw2=$(systemd-ask-password --id=encryption:new "Repeat the passphrase:")
+        pw=$(systemd-ask-password --timeout=0 --keyname=cryptsetup --id=encryption:new "New disk encryption passphrase:")
+        pw2=$(systemd-ask-password --timeout=0 --id=encryption:new "Repeat the passphrase:")
         if [ -n "$pw" ] && [ "$pw" = "$pw2" ]; then
             printf %s "$pw"
             return 0
@@ -196,7 +196,7 @@ converge() {
             log "$dev: starting decryption"
             # Not cached if the device was unlocked before this ran
             pw=$(first_cached_passphrase) ||
-                pw=$(systemd-ask-password --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
+                pw=$(systemd-ask-password --timeout=0 --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
             printf %s "$pw" |
                 cryptsetup reencrypt --decrypt --init-only --header "$hdr" --key-file=- "$dev"
             sync

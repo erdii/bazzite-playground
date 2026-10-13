@@ -26,7 +26,7 @@ reencrypt_in_progress() {
 resume() {
     local dev=$1 pw
     shift
-    while IFS= read -r pw; do
+    while IFS= read -r pw || [ -n "$pw" ]; do
         [ -n "$pw" ] || continue
         if printf %s "$pw" | cryptsetup open --test-passphrase "$@" --key-file=- "$dev" 2>/dev/null; then
             printf %s "$pw" | cryptsetup reencrypt --resume-only "$@" --key-file=- "$dev"

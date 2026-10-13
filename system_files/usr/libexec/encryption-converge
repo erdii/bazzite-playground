@@ -53,7 +53,7 @@ cached_passphrases() {
 
 first_cached_passphrase() {
     local pw
-    while IFS= read -r pw; do
+    while IFS= read -r pw || [ -n "$pw" ]; do
         if [ -n "$pw" ]; then
             printf %s "$pw"
             return 0
@@ -73,7 +73,7 @@ unlock_cached() {
     local dev=$1 name=$2 hdr=${3:-} pw
     local -a args=()
     [ -n "$hdr" ] && args=(--header "$hdr")
-    while IFS= read -r pw; do
+    while IFS= read -r pw || [ -n "$pw" ]; do
         [ -n "$pw" ] || continue
         if printf %s "$pw" | cryptsetup open "${args[@]}" --key-file=- "$dev" "$name" 2>/dev/null; then
             return 0

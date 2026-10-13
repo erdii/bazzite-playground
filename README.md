@@ -24,14 +24,21 @@ Bazzite Deck GNOME (`ghcr.io/ublue-os/bazzite-deck-gnome:stable`) plus:
     a fallback: it stays 0 on quiet boots because fbcon defers taking over.
   - `0003` (LVGL, applied after the spec unpacks it): software rotation for
     LVGL's DRM driver, which otherwise scans its buffers out unrotated.
+  - `0004`: classify combined devices (e.g. Logitech K400 Plus, a keyboard
+    with touchpad) as keyboards so they get a keymap (before, only special
+    keys worked) that also get a cursor for their pointer; rotate relative
+    mouse motion with the display.
 - `system_files/` adds the Deck glue:
   - `/etc/unl0kr.conf.d/50-deck.conf`: DRM backend (the Bazzite kernel has no
     `/dev/fb*`, `CONFIG_FB_DEVICE` is not set), on-screen keyboard always
     shown, haptics off.
   - `unl0kr-agent.{path,service}.d/plymouth.conf`: upstream refuses to start
-    while plymouth runs; we start anyway and stop plymouth so it drops DRM
-    master. `plymouth quit` alone never returns while plymouth shows a
-    password prompt, so it gets killed after 2s.
+    while plymouth runs; we start anyway, `plymouth deactivate` it so it drops
+    DRM master, and `plymouth reactivate` it afterwards, so the splash stays
+    around unl0kr. If deactivating hangs, plymouthd is killed after 5s.
+  - `systemd-ask-password-plymouth.path.d/unl0kr.conf`: plymouth shows no
+    password prompt of its own; a pending prompt keeps it from deactivating
+    (and quitting). A hardware keyboard still works in unl0kr.
   - `/usr/libexec/unl0kr-wait-drm`: waits until amdgpu replaces simpledrm's
     DRM card, otherwise unl0kr draws on a device that disappears.
   - dracut: `90-unl0kr.conf` enables `55unl0kr` (from the RPM) and

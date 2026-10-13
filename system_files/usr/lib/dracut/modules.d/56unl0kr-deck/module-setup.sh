@@ -12,8 +12,9 @@ depends() {
 }
 
 install() {
-    inst_multiple /usr/libexec/unl0kr-wait-drm cat sleep readlink
+    inst_multiple /usr/libexec/unl0kr-wait-drm cat sleep readlink timeout
     inst_multiple \
         /usr/lib/systemd/system/unl0kr-agent.path.d/plymouth.conf \
-        /usr/lib/systemd/system/unl0kr-agent.service.d/plymouth.conf
+        /usr/lib/systemd/system/unl0kr-agent.service.d/plymouth.conf \
+        /usr/lib/systemd/system/systemd-ask-password-plymouth.path.d/unl0kr.conf
 }

@@ -9,7 +9,7 @@ RUN dnf -y --setopt=install_weak_deps=False install \
     cd /pkg && rpmdev-setuptree && top=$(rpmbuild --eval %_topdir) && \
     scripts/fetch-sources.sh "$top/SOURCES" && \
     cp ARCHITECTURE-SECURITY.md dracut/module-setup.sh /patches/*.patch "$top/SOURCES/" && \
-    sed -i 's/^Patch0: .*/&\nPatch1:         0002-unl0kr-rotate-ui-from-panel-orientation.patch/' buffybox-unl0kr.spec && \
+    sed -i 's/^Patch0: .*/&\nPatch1:         0002-unl0kr-rotate-ui-from-panel-orientation.patch\nPatch2:         0004-indev-combined-devices-and-rotated-motion.patch/' buffybox-unl0kr.spec && \
     sed -i "s/^mv lvgl-%{lvgl_commit} lvgl$/&\npatch -p1 -i %{_sourcedir}\/0003-lvgl-drm-software-rotation.patch/" buffybox-unl0kr.spec && \
     dnf -y builddep buffybox-unl0kr.spec && \
     rpmbuild -bb buffybox-unl0kr.spec && \

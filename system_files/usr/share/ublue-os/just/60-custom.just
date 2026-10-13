@@ -30,6 +30,12 @@ encryption state="status":
         echo "This system's encryption is managed by the installer (rd.luks on the kernel command line)." >&2
         exit 1
     fi
+    # The /etc overlay used below does not work together with it
+    if rpm-ostree status --json | jq -e '.deployments[0]["regenerate-initramfs"]' >/dev/null; then
+        echo "Local initramfs regeneration is enabled (rpm-ostree initramfs --enable). Disable it, or" >&2
+        echo "include $conf yourself: sudo rpm-ostree initramfs --enable --arg=-I --arg=$conf" >&2
+        exit 1
+    fi
     internal=$(conf_get INTERNAL_PARTUUID)
     if [ -z "$internal" ]; then
         root=$(findmnt -no SOURCE /sysroot | sed 's/\[.*//')

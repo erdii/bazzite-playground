@@ -1,0 +1,230 @@
+#!/bin/bash
+# Bring the internal partition and microSD card partitions to the encryption
+# state set by `ujust encryption` in /etc/bazzite-playground/encryption.conf,
+# and unlock whatever is encrypted. Runs in the initramfs before the root file
+# system is mounted. Only the LUKS2 header is written here; the data is
+# converted online afterwards by encryption-resume.service.
+set -euo pipefail
+
+conf=/etc/bazzite-playground/encryption.conf
+headroom=$((32 * 1024 * 1024))
+work=/run/encryption
+boot_mnt=$work/boot
+hdr_dir=bazzite-playground/luks-headers
+
+# cryptsetup creates temporary header files in the working directory
+mkdir -p "$work"
+cd "$work"
+
+conf_get() {
+    sed -n "s/^$1=//p" "$conf" 2>/dev/null | tail -n1
+}
+encryption=$(conf_get ENCRYPTION)
+internal_partuuid=$(conf_get INTERNAL_PARTUUID)
+boot_uuid=$(conf_get BOOT_UUID)
+case "${encryption:=undefined}" in
+    internal | internal+microsd | none | undefined) ;;
+    *)
+        echo "encryption: unknown ENCRYPTION=$encryption in $conf, treating it as undefined" >&2
+        encryption=undefined
+        ;;
+esac
+
+log() {
+    echo "encryption: $*" >&2
+}
+
+# 0: should be encrypted, 1: should not be, 2: leave as it is
+desired() {
+    case "$encryption:$1" in
+        undefined:*) return 2 ;;
+        internal+microsd:* | internal:internal) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Passphrases entered so far, as cached for systemd-cryptsetup and the
+# running system (encryption-resume.service)
+cached_passphrases() {
+    local key
+    key=$(keyctl search @u user cryptsetup 2>/dev/null) || return 0
+    keyctl pipe "$key" | tr '\0' '\n'
+}
+
+first_cached_passphrase() {
+    local pw
+    while IFS= read -r pw; do
+        if [ -n "$pw" ]; then
+            printf %s "$pw"
+            return 0
+        fi
+    done < <(cached_passphrases)
+    return 1
+}
+
+reencrypt_in_progress() {
+    local dump
+    dump=$(cryptsetup luksDump "$@")
+    [[ $dump == *online-reencrypt* ]]
+}
+
+# Unlock $1 as $2 (with detached header $3) using a cached passphrase
+unlock_cached() {
+    local dev=$1 name=$2 hdr=${3:-} pw
+    local -a args=()
+    [ -n "$hdr" ] && args=(--header "$hdr")
+    while IFS= read -r pw; do
+        [ -n "$pw" ] || continue
+        if printf %s "$pw" | cryptsetup open "${args[@]}" --key-file=- "$dev" "$name" 2>/dev/null; then
+            return 0
+        fi
+    done < <(cached_passphrases)
+    return 1
+}
+
+# Unlock $1 as $2 (with detached header $3); asks until it works for the
+# internal partition, once with an empty answer skipping it for microSD cards
+unlock() {
+    local dev=$1 name=$2 hdr=${3:-} role=$4 pw
+    local -a args=()
+    [ -e "/dev/mapper/$name" ] && return 0
+    unlock_cached "$dev" "$name" "$hdr" && return 0
+    [ -n "$hdr" ] && args=(--header "$hdr")
+    while :; do
+        if [ "$role" = internal ]; then
+            pw=$(systemd-ask-password --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
+        else
+            pw=$(systemd-ask-password --keyname=cryptsetup --id="encryption:$name" \
+                "Passphrase for the microSD card (empty to skip):")
+            [ -n "$pw" ] || return 1
+        fi
+        if printf %s "$pw" | cryptsetup open "${args[@]}" --key-file=- "$dev" "$name"; then
+            return 0
+        fi
+        log "wrong passphrase for $dev"
+    done
+}
+
+# The passphrase for newly encrypted partitions: the one already in use, or
+# a new one, asked for twice
+new_passphrase() {
+    local pw pw2
+    first_cached_passphrase && return 0
+    while :; do
+        pw=$(systemd-ask-password --keyname=cryptsetup --id=encryption:new "New disk encryption passphrase:")
+        pw2=$(systemd-ask-password --id=encryption:new "Repeat the passphrase:")
+        if [ -n "$pw" ] && [ "$pw" = "$pw2" ]; then
+            printf %s "$pw"
+            return 0
+        fi
+    done
+}
+
+# cryptsetup keeps the first 32M of data at the end of the device while
+# shifting it, so the file system must leave that space unused
+make_headroom() {
+    local dev=$1 type=$2 size fs bs bc
+    size=$(blockdev --getsize64 "$dev")
+    case "$type" in
+        btrfs)
+            fs=$(btrfs inspect-internal dump-super "$dev" | sed -n 's/^total_bytes[[:space:]]*//p')
+            [ $((size - fs)) -ge "$headroom" ] && return 0
+            mkdir -p "$work/fs"
+            mount -t btrfs "$dev" "$work/fs"
+            btrfs filesystem resize $((size - headroom)) "$work/fs" >&2 || { umount "$work/fs"; return 1; }
+            umount "$work/fs"
+            ;;
+        ext4)
+            bs=$(dumpe2fs -h "$dev" 2>/dev/null | sed -n 's/^Block size:[[:space:]]*//p')
+            bc=$(dumpe2fs -h "$dev" 2>/dev/null | sed -n 's/^Block count:[[:space:]]*//p')
+            [ $((size - bs * bc)) -ge "$headroom" ] && return 0
+            # 1: errors corrected
+            e2fsck -f -p "$dev" >&2 || [ $? -eq 1 ] || return 1
+            resize2fs "$dev" $(((size - headroom) / 1024))K >&2
+            ;;
+        *)
+            log "$dev has ${type:-no} file system, only btrfs and ext4 can be encrypted in place"
+            return 1
+            ;;
+    esac
+}
+
+boot_mounted=
+mount_boot() {
+    [ -n "$boot_mounted" ] && return 0
+    if [ -z "$boot_uuid" ]; then
+        log "BOOT_UUID is not set in $conf, cannot store LUKS headers for decryption"
+        return 1
+    fi
+    udevadm wait --timeout=30 "/dev/disk/by-uuid/$boot_uuid"
+    mkdir -p "$boot_mnt"
+    mount -t ext4 "/dev/disk/by-uuid/$boot_uuid" "$boot_mnt"
+    boot_mounted=1
+    mkdir -p "$boot_mnt/$hdr_dir"
+}
+
+converge() {
+    local dev=$1 role=$2 part name hdr='' type want=0
+    part=$(blkid -o value -s PARTUUID "$dev")
+    name=crypt-$part
+    desired "$role" || want=$?
+
+    # A decryption in progress: the header only exists as a file on /boot
+    if [ -n "$boot_uuid" ]; then
+        mount_boot
+        hdr=$boot_mnt/$hdr_dir/$part.hdr
+        if [ -f "$hdr" ]; then
+            unlock "$dev" "$name" "$hdr" "$role" || return 0
+            log "$dev: decryption continues in the running system"
+            return 0
+        fi
+    fi
+
+    type=$(blkid -o value -s TYPE "$dev" || true)
+    if [ "$type" = crypto_LUKS ]; then
+        unlock "$dev" "$name" "" "$role" || {
+            log "$dev: skipped"
+            return 0
+        }
+        if [ "$want" -eq 1 ] && ! reencrypt_in_progress "$dev"; then
+            if [ -z "$boot_uuid" ]; then
+                log "$dev: not decrypting, BOOT_UUID is not set in $conf"
+                return 0
+            fi
+            mount_boot
+            hdr=$boot_mnt/$hdr_dir/$part.hdr
+            log "$dev: starting decryption"
+            first_cached_passphrase |
+                cryptsetup reencrypt --decrypt --init-only --header "$hdr" --key-file=- "$dev"
+            sync
+        fi
+        return 0
+    fi
+
+    [ "$want" -eq 0 ] || return 0
+    make_headroom "$dev" "$type" || {
+        log "$dev: not encrypting"
+        return 0
+    }
+    log "$dev: starting encryption"
+    new_passphrase | cryptsetup reencrypt --encrypt --type luks2 --reduce-device-size 32M \
+        --init-only --key-file=- "$dev" "$name"
+}
+
+udevadm settle --timeout=30 || true
+
+if [ -n "$internal_partuuid" ]; then
+    udevadm wait --timeout=60 "/dev/disk/by-partuuid/$internal_partuuid"
+    converge "$(readlink -f "/dev/disk/by-partuuid/$internal_partuuid")" internal
+fi
+
+for sys in /sys/block/mmcblk*/mmcblk*p*; do
+    [ -e "$sys" ] || continue
+    dev=/dev/${sys##*/}
+    [ "$(blkid -o value -s PARTUUID "$dev")" = "$internal_partuuid" ] && continue
+    converge "$dev" microsd
+done
+
+if [ -n "$boot_mounted" ]; then
+    umount "$boot_mnt"
+fi

@@ -1,0 +1,30 @@
+#!/bin/bash
+# Mount the microSD cards encryption-converge unlocked, the way SteamOS mounts
+# plain cards. The SteamOS udev rule and ublue-os-media-automount only look at
+# partitions, not at the unlocked device-mapper devices.
+set -euo pipefail
+
+for mapping in /dev/mapper/crypt-*; do
+    [ -e "$mapping" ] || continue
+    part=${mapping#/dev/mapper/crypt-}
+    case "$(readlink -f "/dev/disk/by-partuuid/$part")" in
+        /dev/mmcblk*) ;;
+        *) continue ;;
+    esac
+    findmnt -rn --source "$mapping" >/dev/null && continue
+
+    # steamos-automount.sh uses its argument both as /dev/<name> and as the
+    # udisks object name, which escapes the dash in dm-N
+    kname=$(readlink -f "$mapping")
+    kname=${kname#/dev/}
+    udisks_name=${kname//-/_2d}
+    ln -sfn "$kname" "/dev/$udisks_name"
+    /usr/libexec/hwsupport/steamos-automount.sh add "$udisks_name"
+
+    # steamos-automount.sh only adds this legacy link for mmcblk0p* devices
+    target=$(findmnt -rnfo TARGET --source "$mapping")
+    link=/run/media/${target##*/}
+    if [ -n "$target" ] && [ ! -e "$link" ]; then
+        ln -s -- "$target" "$link"
+    fi
+done

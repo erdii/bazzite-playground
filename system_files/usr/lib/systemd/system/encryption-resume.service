@@ -1,0 +1,16 @@
+[Unit]
+Description=Continue disk encryption and decryption
+ConditionPathExistsGlob=/dev/mapper/crypt-*
+# Headers of decryptions in progress are on /boot
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/encryption-resume
+Nice=19
+IOSchedulingClass=idle
+# encryption-converge caches the boot passphrase in root's user keyring
+KeyringMode=shared
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+#!/bin/bash
+# One-time in-place LUKS2 initialization of the partition named by
+# rd.encrypt=<partuuid>:<luks-uuid>. The data itself is encrypted later,
+# online, by luks-encrypt-resume.service.
+set -euo pipefail
+
+arg=$(tr " " "\n" </proc/cmdline | sed -n "s/^rd\.encrypt=//p" | tail -n1)
+part=${arg%%:*}
+uuid=${arg#*:}
+dev=/dev/disk/by-partuuid/$part
+
+udevadm wait --timeout=60 "$dev"
+type=$(blkid -o value -s TYPE "$dev" || true)
+[ "$type" = crypto_LUKS ] && exit 0
+
+if [ "$type" != btrfs ]; then
+    echo "luks-encrypt: $dev has ${type:-no} filesystem, only btrfs is supported; not encrypting" >&2
+    exit 0
+fi
+# cryptsetup keeps the first 32M of data at the end of the device while
+# shifting it, so the filesystem must leave that space unused.
+size=$(blockdev --getsize64 "$dev")
+fs=$(btrfs inspect-internal dump-super "$dev" | sed -n 's/^total_bytes[[:space:]]*//p')
+if [ $((size - fs)) -lt $((32 * 1024 * 1024)) ]; then
+    echo "luks-encrypt: shrink the filesystem on $dev by 32M first; not encrypting" >&2
+    exit 0
+fi
+
+while :; do
+    # --keyname caches it for systemd-cryptsetup, which would ask again otherwise
+    pw=$(systemd-ask-password --keyname=cryptsetup --id="luks-encrypt:$uuid" "New disk encryption passphrase:")
+    pw2=$(systemd-ask-password --id="luks-encrypt:$uuid" "Repeat the passphrase:")
+    [ -n "$pw" ] && [ "$pw" = "$pw2" ] && break
+done
+
+printf %s "$pw" | cryptsetup reencrypt --encrypt --type luks2 --reduce-device-size 32M \
+    --init-only --uuid "$uuid" --key-file=- "$dev"
+udevadm trigger --settle --action=change "$dev"

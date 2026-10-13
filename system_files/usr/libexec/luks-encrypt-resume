@@ -1,0 +1,23 @@
+#!/bin/bash
+# Continue the in-place encryption started by luks-encrypt-init until done.
+# Interrupting it is safe; it continues on the next boot.
+set -euo pipefail
+
+arg=$(tr " " "\n" </proc/cmdline | sed -n "s/^rd\.encrypt=//p" | tail -n1)
+dev=/dev/disk/by-uuid/${arg#*:}
+
+cryptsetup luksDump "$dev" | grep -q online-reencrypt || exit 0
+
+# systemd-cryptsetup caches the passphrase entered at boot for a short while
+while IFS= read -r pw; do
+    if printf %s "$pw" | cryptsetup open --test-passphrase --key-file=- "$dev"; then
+        printf %s "$pw" | cryptsetup reencrypt --resume-only --key-file=- "$dev"
+        exit
+    fi
+done < <(systemd-ask-password --keyname=cryptsetup --accept-cached --multiple --no-tty --timeout=1 "" 2>/dev/null || true)
+
+if [ -t 0 ]; then
+    exec cryptsetup reencrypt --resume-only "$dev"
+fi
+echo "luks-encrypt: passphrase no longer cached; run luks-encrypt-resume in a terminal or reboot" >&2
+exit 1

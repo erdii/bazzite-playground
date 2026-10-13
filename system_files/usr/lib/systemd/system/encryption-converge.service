@@ -1,0 +1,19 @@
+[Unit]
+Description=Bring disks to the configured encryption state
+DefaultDependencies=no
+ConditionPathExists=/etc/initrd-release
+# Passphrases are asked for through unl0kr
+After=systemd-udev-trigger.service plymouth-start.service unl0kr-agent.path
+Before=cryptsetup-pre.target sysroot.mount
+Wants=cryptsetup-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/encryption-converge
+# Passphrases are cached in root's user keyring for encryption-resume.service
+KeyringMode=shared
+TimeoutSec=0
+
+[Install]
+WantedBy=sysinit.target

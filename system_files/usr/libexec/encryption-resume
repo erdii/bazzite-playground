@@ -1,0 +1,65 @@
+#!/bin/bash
+# Continue the encryptions and decryptions that encryption-converge started
+# in the initramfs, one device after the other, until done. Interrupting is
+# safe; they continue after the next boot.
+set -euo pipefail
+
+hdr_dir=/boot/bazzite-playground/luks-headers
+
+# cryptsetup creates temporary header files in the working directory
+mkdir -p /run/encryption
+cd /run/encryption
+
+# encryption-converge caches the passphrase entered at boot for a short while
+cached_passphrases() {
+    local key
+    key=$(keyctl search @u user cryptsetup 2>/dev/null) || return 0
+    keyctl pipe "$key" | tr '\0' '\n'
+}
+
+reencrypt_in_progress() {
+    local dump
+    dump=$(cryptsetup luksDump "$@")
+    [[ $dump == *online-reencrypt* ]]
+}
+
+resume() {
+    local dev=$1 pw
+    shift
+    while IFS= read -r pw; do
+        [ -n "$pw" ] || continue
+        if printf %s "$pw" | cryptsetup open --test-passphrase "$@" --key-file=- "$dev" 2>/dev/null; then
+            printf %s "$pw" | cryptsetup reencrypt --resume-only "$@" --key-file=- "$dev"
+            return
+        fi
+    done < <(cached_passphrases)
+    if [ -t 0 ]; then
+        cryptsetup reencrypt --resume-only "$@" "$dev"
+        return
+    fi
+    echo "encryption: passphrase for $dev no longer cached; run $0 in a terminal or reboot" >&2
+    return 1
+}
+
+failed=0
+for mapping in /dev/mapper/crypt-*; do
+    [ -e "$mapping" ] || continue
+    part=${mapping#/dev/mapper/crypt-}
+    dev=/dev/disk/by-partuuid/$part
+    hdr=$hdr_dir/$part.hdr
+    if [ -f "$hdr" ]; then
+        if ! reencrypt_in_progress --header "$hdr" "$dev"; then
+            continue
+        fi
+        echo "encryption: decrypting $dev" >&2
+        if resume "$dev" --header "$hdr"; then
+            rm -f "$hdr"
+        else
+            failed=1
+        fi
+    elif reencrypt_in_progress "$dev"; then
+        echo "encryption: encrypting $dev" >&2
+        resume "$dev" || failed=1
+    fi
+done
+exit "$failed"

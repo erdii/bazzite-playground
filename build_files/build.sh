@@ -24,7 +24,7 @@ rm /etc/yum.repos.d/mullvad.repo
 
 dnf5 install -y /ctx/rpms/*.rpm
 
-systemctl enable luks-encrypt-resume.service
+systemctl enable encryption-resume.service encryption-sdcard-mount.service
 
 # The base image ships a prebuilt initramfs; rebuild it so it picks up unl0kr
 # (90-unl0kr.conf) with the same flags as bazzite/build_files/build-initramfs.

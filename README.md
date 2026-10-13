@@ -53,40 +53,48 @@ agent, drop-ins, amdgpu/touch modules and XKB data (see "Testing").
 Not verified yet: an actual boot on the Deck (DRM hand-over from plymouth,
 rotation direction, touch alignment, LUKS unlock).
 
-## Encrypting an existing installation in place
+## Disk encryption state
 
-`luks-encrypt-init` (initramfs, dracut module `57luks-encrypt`) and
-`luks-encrypt-resume.service` encrypt the btrfs root partition of a running
-installation with LUKS2 without reinstalling. Only the header is written
-while the root is unmounted (seconds, at boot); the data is encrypted
-online afterwards, at idle priority. Rehearsed on the Deck with a microSD
-volume: interrupting, suspending and rebooting mid-way are all safe
-(`cryptsetup reencrypt`'s default checksum resilience), and the data
-checksums and a btrfs scrub were clean afterwards.
+`ujust encryption <state>` sets which disks should be encrypted:
 
-1. Back up what you cannot re-download.
-2. Make room for the LUKS2 header (online):
-   `sudo btrfs filesystem resize -32M /sysroot`
-3. Pick the LUKS UUID up front and point the boot at it:
-   ```bash
-   U=$(uuidgen)
-   P=$(sudo blkid -s PARTUUID -o value /dev/nvme0n1p3)
-   sudo rpm-ostree kargs --append=rd.luks.uuid=$U --append=rd.encrypt=$P:$U \
-       --append=rd.luks.options=$U=x-systemd.device-timeout=600
-   ```
-4. Reboot. unl0kr asks for the new passphrase twice; the boot continues
-   and `luks-encrypt-resume.service` encrypts in the background
-   (`journalctl -fu luks-encrypt-resume`). It takes the passphrase that
-   systemd-cryptsetup cached at boot; after an interruption it continues
-   after the next unlock, or run `sudo /usr/libexec/luks-encrypt-resume`.
-5. When `sudo cryptsetup luksDump /dev/disk/by-uuid/$U` no longer lists
-   `online-reencrypt`, drop the migration arguments:
-   `sudo rpm-ostree kargs --delete=rd.encrypt=$P:$U --delete=rd.luks.options=$U=x-systemd.device-timeout=600`
+| State | Internal (root) partition | microSD cards |
+|---|---|---|
+| `internal` | encrypted | decrypted |
+| `internal+microsd` | encrypted | encrypted (any card inserted at boot) |
+| `none` | decrypted | decrypted |
+| `undefined` (default) | left as it is | left as it is |
 
-`luks-encrypt-init` refuses (and boots unencrypted) unless the partition
-holds btrfs with at least 32 MiB unused at the end. If it fails anyway,
-the unlock times out after 10 minutes; boot the previous entry and remove
-`rd.encrypt=` / `rd.luks.uuid=` again.
+The state is stored in `/etc/bazzite-playground/encryption.conf` (with the
+internal partition and the `/boot` file system the command recorded) and
+carried into the initramfs (`rpm-ostree initramfs-etc`). On every boot,
+`encryption-converge` (dracut module `57encryption`) brings each disk to the
+state, before the root file system is mounted:
+
+- encrypted disks are unlocked through unl0kr, whatever the state; one
+  passphrase for all, cached so it is asked for once
+- a disk that should be encrypted: the file system (btrfs or ext4) is shrunk
+  by 32 MiB, the new passphrase asked for twice (or the one already in use
+  taken), and LUKS2 in-place encryption initialized
+- a disk that should not be encrypted: in-place decryption is initialized;
+  its LUKS header moves to `/boot/bazzite-playground/luks-headers/` until
+  the decryption is done (do not delete those files)
+- microSD cards that do not open with the passphrase can be skipped
+
+The data is converted online afterwards by `encryption-resume.service`
+(idle priority) with the passphrase cached at boot; `ujust encryption
+status` shows the progress. Interrupting, suspending and rebooting are safe;
+it continues after the next unlock. Unlocked microSD cards are mounted
+through SteamOS' `steamos-automount.sh` (`encryption-sdcard-mount.service`).
+Cards inserted after the boot are handled at the next boot.
+
+Systems encrypted by the installer (`rd.luks` on the kernel command line)
+are left to systemd-cryptsetup; `ujust encryption` refuses to manage them.
+
+Rehearsed on the Deck with microSD volumes: encryption and decryption while
+mounted and in use, interrupted, suspended for 5 min and continued after a
+reboot; btrfs and ext4; data checksums and file system checks clean
+afterwards. Back up what you cannot re-download before encrypting the
+internal disk.
 
 ## Publishing and switching
 

@@ -164,7 +164,7 @@ mount_boot() {
 }
 
 converge() {
-    local dev=$1 role=$2 part name hdr='' type want=0
+    local dev=$1 role=$2 part name hdr='' type want=0 pw
     part=$(blkid -o value -s PARTUUID "$dev")
     name=crypt-$part
     desired "$role" || want=$?
@@ -194,7 +194,10 @@ converge() {
             mount_boot
             hdr=$boot_mnt/$hdr_dir/$part.hdr
             log "$dev: starting decryption"
-            first_cached_passphrase |
+            # Not cached if the device was unlocked before this ran
+            pw=$(first_cached_passphrase) ||
+                pw=$(systemd-ask-password --keyname=cryptsetup --id="encryption:$name" "Disk encryption passphrase:")
+            printf %s "$pw" |
                 cryptsetup reencrypt --decrypt --init-only --header "$hdr" --key-file=- "$dev"
             sync
         fi

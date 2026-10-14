@@ -4,7 +4,8 @@ encryption state="status":
     set -euo pipefail
     conf=/etc/bazzite-playground/encryption.conf
     conf_get() {
-        sed -n "s/^$1=//p" "$conf" 2>/dev/null | tail -n1
+        [ -r "$conf" ] || return 0
+        sed -n "s/^$1=//p" "$conf" | tail -n1
     }
     case "{{ state }}" in
         status)

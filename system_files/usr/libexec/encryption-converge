@@ -17,7 +17,9 @@ mkdir -p "$work"
 cd "$work"
 
 conf_get() {
-    sed -n "s/^$1=//p" "$conf" 2>/dev/null | tail -n1
+    # Without the file (never set via ujust) everything is undefined
+    [ -r "$conf" ] || return 0
+    sed -n "s/^$1=//p" "$conf" | tail -n1
 }
 encryption=$(conf_get ENCRYPTION)
 internal_partuuid=$(conf_get INTERNAL_PARTUUID)

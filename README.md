@@ -4,7 +4,7 @@ Bazzite Deck GNOME (`ghcr.io/ublue-os/bazzite-deck-gnome:stable`) plus:
 
 - a touchscreen LUKS unlock in the initramfs, so full disk encryption works on
   a Steam Deck without a keyboard (below);
-- Mullvad VPN (immutable `/opt`, repo removed after install), golang, git;
+- disk encryption state management (`ujust encryption`, below);
 - sigstore verification of this image against `cosign.pub`
   (`/etc/containers/policy.json`, `registries.d/erdii.yaml`).
 

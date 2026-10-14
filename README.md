@@ -64,11 +64,13 @@ rotation direction, touch alignment, LUKS unlock).
 | `none` | decrypted | decrypted |
 | `undefined` (default) | left as it is | left as it is |
 
-The state is stored in `/etc/bazzite-playground/encryption.conf` (with the
-internal partition and the `/boot` file system the command recorded) and
-carried into the initramfs (`rpm-ostree initramfs-etc`). On every boot,
-`encryption-converge` (dracut module `57encryption`) brings each disk to the
-state, before the root file system is mounted:
+The state is stored in kernel arguments (`bazzite.encryption=`, plus
+`bazzite.encryption.internal=` and `bazzite.encryption.boot=` for the internal
+partition and the `/boot` file system the command recorded), which survive
+`bootc upgrade` and `bootc switch`. The encrypted internal partition also
+carries the LUKS label `bazzite-internal`, so it is unlocked even if the
+kernel arguments get lost. On every boot, `encryption-converge` (dracut module
+`57encryption`) brings each disk to the state, before the root file system is mounted:
 
 - encrypted disks are unlocked through unl0kr, whatever the state; one
   passphrase for all, cached so it is asked for once

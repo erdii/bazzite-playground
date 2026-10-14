@@ -15,11 +15,6 @@ jq '.transports.docker["ghcr.io/erdii/bazzite-playground"] = [{
     }]' /etc/containers/policy.json > /etc/containers/policy.json.new
 mv /etc/containers/policy.json.new /etc/containers/policy.json
 
-curl -Lo /etc/yum.repos.d/mullvad.repo https://repository.mullvad.net/rpm/stable/mullvad.repo
-dnf5 install -y mullvad-vpn golang git
-# Don't leave the third-party repo enabled in the image.
-rm /etc/yum.repos.d/mullvad.repo
-
 ### unl0kr: touchscreen LUKS unlock in the initramfs
 
 dnf5 install -y /ctx/rpms/*.rpm

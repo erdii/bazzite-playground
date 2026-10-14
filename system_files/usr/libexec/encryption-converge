@@ -1,12 +1,15 @@
 #!/bin/bash
 # Bring the internal partition and microSD card partitions to the encryption
-# state set by `ujust encryption` in /etc/bazzite-playground/encryption.conf,
-# and unlock whatever is encrypted. Runs in the initramfs before the root file
+# state set by `ujust encryption` (kernel arguments bazzite.encryption=,
+# bazzite.encryption.internal=, bazzite.encryption.boot=), and unlock whatever
+# is encrypted. Runs in the initramfs before the root file
 # system is mounted. Only the LUKS2 header is written here; the data is
 # converted online afterwards by encryption-resume.service.
 set -euo pipefail
 
+# Older versions kept the state in this file, carried into the initramfs
 conf=/etc/bazzite-playground/encryption.conf
+internal_label=bazzite-internal
 headroom=$((32 * 1024 * 1024))
 work=/run/encryption
 boot_mnt=$work/boot
@@ -21,9 +24,15 @@ conf_get() {
     [ -r "$conf" ] || return 0
     sed -n "s/^$1=//p" "$conf" | tail -n1
 }
-encryption=$(conf_get ENCRYPTION)
-internal_partuuid=$(conf_get INTERNAL_PARTUUID)
-boot_uuid=$(conf_get BOOT_UUID)
+karg() {
+    tr ' ' '\n' </proc/cmdline | sed -n "s/^$1=//p" | tail -n1
+}
+encryption=$(karg bazzite.encryption)
+internal_partuuid=$(karg bazzite.encryption.internal)
+boot_uuid=$(karg bazzite.encryption.boot)
+[ -n "$encryption" ] || encryption=$(conf_get ENCRYPTION)
+[ -n "$internal_partuuid" ] || internal_partuuid=$(conf_get INTERNAL_PARTUUID)
+[ -n "$boot_uuid" ] || boot_uuid=$(conf_get BOOT_UUID)
 case "${encryption:=undefined}" in
     internal | internal+microsd | none | undefined) ;;
     *)
@@ -221,8 +230,10 @@ converge() {
         return 0
     }
     log "$dev: starting encryption"
+    local -a label=()
+    [ "$role" = internal ] && label=(--label "$internal_label")
     new_passphrase | cryptsetup reencrypt --encrypt --type luks2 --reduce-device-size 32M \
-        --init-only --key-file=- "$dev" "$name"
+        "${label[@]}" --init-only --key-file=- "$dev" "$name"
 }
 
 udevadm settle --timeout=30 || true
@@ -230,6 +241,14 @@ udevadm settle --timeout=30 || true
 if [ -n "$internal_partuuid" ]; then
     udevadm wait --timeout=60 "/dev/disk/by-partuuid/$internal_partuuid"
     converge "$(readlink -f "/dev/disk/by-partuuid/$internal_partuuid")" internal
+else
+    # Without the state (e.g. lost kernel arguments) the encrypted internal
+    # partition must still be unlocked, or the root file system never appears
+    for dev in $(blkid -o device -t LABEL="$internal_label" || true); do
+        [ "$(blkid -o value -s TYPE "$dev")" = crypto_LUKS ] || continue
+        internal_partuuid=$(blkid -o value -s PARTUUID "$dev")
+        converge "$dev" internal
+    done
 fi
 
 for sys in /sys/block/mmcblk*/mmcblk*p*; do

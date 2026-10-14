@@ -13,6 +13,7 @@ encryption state="status":
             for mapping in /dev/mapper/crypt-*; do
                 [ -e "$mapping" ] || continue
                 part=${mapping#/dev/mapper/crypt-}
+                [[ $part =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]] || continue
                 echo "Unlocked: $(readlink -f "/dev/disk/by-partuuid/$part") as $mapping"
             done
             if systemctl -q is-active encryption-resume.service; then

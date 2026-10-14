@@ -29,12 +29,12 @@ resume() {
     while IFS= read -r pw || [ -n "$pw" ]; do
         [ -n "$pw" ] || continue
         if printf %s "$pw" | cryptsetup open --test-passphrase "$@" --key-file=- "$dev" 2>/dev/null; then
-            printf %s "$pw" | cryptsetup reencrypt --resume-only "$@" --key-file=- "$dev"
+            printf %s "$pw" | cryptsetup reencrypt --resume-only --progress-frequency 30 "$@" --key-file=- "$dev"
             return
         fi
     done < <(cached_passphrases)
     if [ -t 0 ]; then
-        cryptsetup reencrypt --resume-only "$@" "$dev"
+        cryptsetup reencrypt --resume-only --progress-frequency 30 "$@" "$dev"
         return
     fi
     echo "encryption: passphrase for $dev no longer cached; run $0 in a terminal or reboot" >&2
@@ -45,6 +45,8 @@ failed=0
 for mapping in /dev/mapper/crypt-*; do
     [ -e "$mapping" ] || continue
     part=${mapping#/dev/mapper/crypt-}
+    # Skip the -hotzone/-overlay helper devices of conversions in progress
+    [[ $part =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]] || continue
     dev=/dev/disk/by-partuuid/$part
     hdr=$hdr_dir/$part.hdr
     if [ -f "$hdr" ]; then

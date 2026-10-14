@@ -7,6 +7,8 @@ set -euo pipefail
 for mapping in /dev/mapper/crypt-*; do
     [ -e "$mapping" ] || continue
     part=${mapping#/dev/mapper/crypt-}
+    # Skip the -hotzone/-overlay helper devices of conversions in progress
+    [[ $part =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]] || continue
     case "$(readlink -f "/dev/disk/by-partuuid/$part")" in
         /dev/mmcblk*) ;;
         *) continue ;;
